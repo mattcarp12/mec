@@ -1,0 +1,61 @@
+services:
+  # 1. The Edge Router (API Gateway)
+  traefik:
+    image: traefik:v3.6
+    command:
+      - "--api.insecure=true" # Enables the Traefik UI at http://localhost:8080
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80" # Main HTTP port (where your browser will go)
+      - "8080:8080" # Observability Dashboard
+    volumes:
+      - "/run/docker.sock:/var/run/docker.sock:ro"
+
+  # 2. The Database (Unchanged)
+  identity-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: identity
+    ports:
+      - "5432:5432"
+    volumes:
+      - identity-data:/var/lib/postgresql/data
+
+  # 3. The React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # Prevents local node_modules from overwriting container's
+    labels:
+      - "traefik.enable=true"
+      # Anything that is NOT /api/... goes to the React app
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+
+  # 4. The Go Identity API
+  identity-api:
+    build:
+      context: ./backend
+      dockerfile: cmd/identity/Dockerfile.dev
+    environment:
+      - DATABASE_URL=postgres://admin:supersecretpassword@identity-db:5432/identity?sslmode=disable
+    volumes:
+      - ./backend:/workspace/backend
+    labels:
+      - "traefik.enable=true"
+      # Only intercept traffic meant for the auth service
+      - "traefik.http.routers.identity.rule=PathPrefix(`/api/v1/auth`)"
+      - "traefik.http.routers.identity.entrypoints=web"
+      - "traefik.http.services.identity.loadbalancer.server.port=8080" # Port the Go server listens on
+    depends_on:
+      - identity-db
+
+volumes:
+  identity-data:

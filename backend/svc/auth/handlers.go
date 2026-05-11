@@ -1,22 +1,10 @@
-package auth
+package main
 
 import (
 	"encoding/json"
 	"net/http"
 	"time"
 )
-
-type Handler struct {
-	service     *AuthService
-	tokenSecret string
-}
-
-func NewHandler(service *AuthService, tokenSecret string) *Handler {
-	return &Handler{
-		service:     service,
-		tokenSecret: tokenSecret,
-	}
-}
 
 // writeJSON is a helper to centralize JSON responses.
 func writeJSON(w http.ResponseWriter, status int, data any) {
@@ -26,7 +14,7 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 // Register handles POST /api/v1/auth/register
-func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+func Register_Handler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -38,7 +26,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.service.Register(r.Context(), payload.Email, payload.Password)
+	user, err := RegisterNewUser(r.Context(), payload.Email, payload.Password)
 	if err != nil {
 		if err == ErrUserExists {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -52,7 +40,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 // Login handles POST /api/v1/auth/login
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+func Login_Handler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -63,20 +51,20 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.service.Login(r.Context(), payload.Email, payload.Password)
+	user, err := Login(r.Context(), payload.Email, payload.Password)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 
 	// Generate PASETO Token
-	token, err := GeneratePASETO(user.ID, h.tokenSecret)
+	token, err := generatePASETO(user.ID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not generate token"})
 		return
 	}
 
-	// SOTA Security: Set the token in an HttpOnly cookie to prevent XSS theft.
+	// Security: Set the token in an HttpOnly cookie to prevent XSS theft.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    token,

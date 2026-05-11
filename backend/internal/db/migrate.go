@@ -16,8 +16,12 @@ import (
 var _identityMigrations embed.FS
 var identityMigrations, _ = fs.Sub(_identityMigrations, "migrations/identity")
 
+//go:embed migrations/catalog/*.sql
+var _catalogMigtations embed.FS
+var catalogMigrations, _ = fs.Sub(_catalogMigtations, "migrations/catalog")
+
 // runMigrations applies all pending UP migrations to the database.
-func runMigrations(dsn string, migrationsFS fs.FS) error {
+func runMigrations(migrationsFS fs.FS) error {
 	log.Println("Initializing database migrations...")
 
 	// 1. Load the embedded file system
@@ -46,6 +50,13 @@ func runMigrations(dsn string, migrationsFS fs.FS) error {
 	return nil
 }
 
-func MigrateIdentityDB(dsn string) error {
-	return runMigrations(dsn, identityMigrations)
+func RunMigrations(domain string) error {
+	switch domain {
+	case "identity":
+		return runMigrations(identityMigrations)
+	case "catalog":
+		return runMigrations(catalogMigrations)
+	default:
+		return fmt.Errorf("migration for %s not supported", domain)
+	}
 }

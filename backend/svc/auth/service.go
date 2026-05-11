@@ -1,11 +1,10 @@
-package auth
+package main
 
 import (
 	"context"
 	"errors"
 
 	"github.com/mattcarp12/mec/internal/models"
-	"github.com/mattcarp12/mec/internal/repository"
 )
 
 var (
@@ -13,29 +12,20 @@ var (
 	ErrUserExists         = errors.New("user with this email already exists")
 )
 
-// AuthService handles the business logic for user identities.
-type AuthService struct {
-	repo repository.UserRepository
-}
-
-// NewAuthService creates a new instance of the AuthService.
-func NewAuthService(repo repository.UserRepository) *AuthService {
-	return &AuthService{
-		repo: repo,
-	}
-}
-
-// Register creates a new user after hashing their password.
-func (s *AuthService) Register(ctx context.Context, email, password string) (*models.User, error) {
+// RegisterNewUser creates a new user after hashing their password.
+func RegisterNewUser(ctx context.Context, email, password string) (*models.User, error) {
 	// 1. Check if user already exists (optional, DB constraint will also catch this,
 	// but doing it here allows for a cleaner error message).
-	existingUser, _ := s.repo.GetUserByEmail(ctx, email)
+	existingUser, err := GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
 	if existingUser != nil {
 		return nil, ErrUserExists
 	}
 
 	// 2. Hash the password
-	hash, err := HashPassword(password)
+	hash, err := hashPassword(password)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +38,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (*mo
 	}
 
 	// 4. Persist to database
-	err = s.repo.CreateUser(ctx, user)
+	err = CreateUser(ctx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -58,14 +48,14 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (*mo
 
 // Login verifies credentials and returns the user if successful.
 // Note: We will add PASETO token generation to this in the next step.
-func (s *AuthService) Login(ctx context.Context, email, password string) (*models.User, error) {
-	user, err := s.repo.GetUserByEmail(ctx, email)
+func Login(ctx context.Context, email, password string) (*models.User, error) {
+	user, err := GetUserByEmail(ctx, email)
 	if err != nil {
 		// We don't expose if the user exists or not to prevent enumeration attacks
 		return nil, ErrInvalidCredentials
 	}
 
-	match, err := VerifyPassword(password, user.PasswordHash)
+	match, err := verifyPassword(password, user.PasswordHash)
 	if err != nil || !match {
 		return nil, ErrInvalidCredentials
 	}

@@ -2,27 +2,46 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
 
-	"aidanwoods.dev/go-paseto"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/argon2"
 )
 
-var tokenSecret string
+var privateKey *rsa.PrivateKey
 
 func init() {
-	tokenSecret = os.Getenv("TOKEN_SECRET")
+	loadPrivateKey()
+}
 
-	// Use a dummy 32-byte secret for local dev PASETO generation
-	if tokenSecret == "" {
-		tokenSecret = "12345678901234567890123456789012"
+func loadPrivateKey() {
+	path := os.Getenv("JWT_PRIVATE_KEY_PATH")
+	if path == "" {
+		log.Println("JWT_PRIVATE_KEY_PATH not set, using default path 'private.pem'")
+		path = "private.pem" // Default path for development
+	}
+
+	// read file at path
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Fatalf("failed to read private key: %v", err)
+	}
+
+	// parse PEM block
+	privateKey, err = jwt.ParseRSAPrivateKeyFromPEM(data)
+	if err != nil {
+		log.Fatalf("failed to parse private key: %v", err)
 	}
 }
 
@@ -36,14 +55,14 @@ const (
 	saltLen    = 16        // Length of the random salt
 )
 
-// hashPassword generates an Argon2id hash from a plaintext password.
-func hashPassword(password string) (string, error) {
+// hashPassword generates an Argon2id hashPassword from a plaintext password.
+func hashPassword(pass string) (string, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
 
-	hash := argon2.IDKey([]byte(password), salt, iterations, memory, threads, keyLen)
+	hash := argon2.IDKey([]byte(pass), salt, iterations, memory, threads, keyLen)
 
 	// We encode the parameters into the final string so we can verify it later
 	// Format: $argon2id$v=19$m=65536,t=3,p=2$<salt>$<hash>
@@ -94,23 +113,29 @@ func verifyPassword(password, encodedHash string) (bool, error) {
 	return false, nil
 }
 
-// generatePASETO creates a secure, encrypted V4 PASETO token.
-func generatePASETO(userID uuid.UUID) (string, error) {
-	token := paseto.NewToken()
+func generateAccessToken(userID uuid.UUID) (string, error) {
+	claims := jwt.MapClaims{
+		"sub": userID.String(),
+		"iss": "mec-auth-service",
+		"iat": time.Now().Unix(),
+		"exp": time.Now().Add(15 * time.Minute).Unix(),
+	}
 
-	// SOTA Token Claims
-	token.SetIssuedAt(time.Now())
-	token.SetNotBefore(time.Now())
-	token.SetExpiration(time.Now().Add(24 * time.Hour))
-	token.SetString("user_id", userID.String())
-
-	// PASETO requires exactly a 32-byte key for V4 symmetric encryption
-	key, err := paseto.V4SymmetricKeyFromBytes([]byte(tokenSecret))
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	signedToken, err := token.SignedString(privateKey)
 	if err != nil {
 		return "", err
 	}
+	return signedToken, nil
+}
 
-	// Encrypt the token (this ensures both authenticity and confidentiality)
-	encryptedToken := token.V4Encrypt(key, nil)
-	return encryptedToken, nil
+func generateRefreshToken() string {
+	return rand.Text()
+}
+
+// hashToken generates a SHA-256 hash of a plaintext token string.
+// We use hex encoding to make it database-friendly (VARCHAR).
+func hashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }

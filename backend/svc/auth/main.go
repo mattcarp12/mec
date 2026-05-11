@@ -1,35 +1,24 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/mattcarp12/mec/internal/db"
 )
 
 func main() {
-	log.Println("Starting Identity Service...")
-
-	migrate := flag.Bool("migrate", false, "Run database migrations and exit")
-	flag.Parse()
-
+	log.Println("Starting Auth Service...")
 	db.Init()
-
-	if *migrate {
-		if err := db.RunMigrations("identity"); err != nil {
-			log.Fatalf("Migration failed: %v", err)
-		}
-		os.Exit(0)
-	}
 
 	mux := http.NewServeMux()
 
 	// Notice the HTTP methods included directly in the path string!
 	mux.HandleFunc("POST /api/v1/auth/register", Register_Handler)
 	mux.HandleFunc("POST /api/v1/auth/login", Login_Handler)
+	mux.HandleFunc("POST /api/v1/auth/refresh", Refresh_Handler)
+	mux.HandleFunc("POST /api/v1/auth/logout", Logout_Handler)
 
 	// 3. Server Configuration
 	// Never use the default http.ListenAndServe() as it lacks timeouts and can easily

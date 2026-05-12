@@ -5,13 +5,17 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,13 +23,13 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-var privateKey *rsa.PrivateKey
+var keystore sync.Map
 
 func init() {
-	loadPrivateKey()
+	loadPrivateKeys()
 }
 
-func loadPrivateKey() {
+func loadPrivateKeys() {
 	path := os.Getenv("JWT_PRIVATE_KEY_PATH")
 	if path == "" {
 		log.Println("JWT_PRIVATE_KEY_PATH not set, using default path 'private.pem'")
@@ -39,10 +43,56 @@ func loadPrivateKey() {
 	}
 
 	// parse PEM block
-	privateKey, err = jwt.ParseRSAPrivateKeyFromPEM(data)
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(data)
 	if err != nil {
 		log.Fatalf("failed to parse private key: %v", err)
 	}
+
+	kid, err := hashPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		log.Fatalf("failed to hash public key: %v", err)
+	}
+	keystore.Store("current-kid", kid)
+	keystore.Store(kid, privateKey)
+}
+
+func getKid() string {
+	_kid, _ := keystore.Load("current-kid")
+	kid, _ := _kid.(string)
+	return kid
+}
+
+func getPrivateKey() *rsa.PrivateKey {
+	kid := getKid()
+	_privkey, ok := keystore.Load(kid)
+	if !ok {
+		return nil
+	}
+	privkey, ok := _privkey.(*rsa.PrivateKey)
+	if !ok {
+		return nil
+	}
+	return privkey
+}
+
+// returns kid
+func setCurrentPrivateKey(privkey *rsa.PrivateKey) (string, error) {
+	kid, err := hashPublicKey(&privkey.PublicKey)
+	if err != nil {
+		return "", err
+	}
+	// possible race condition here
+	keystore.Store("current-kid", kid)
+	keystore.Store(kid, privkey)
+	return kid, nil
+}
+
+func hashPublicKey(publicKey *rsa.PublicKey) (string, error) {
+	pubBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return "", err
+	}
+	return hashToken(string(pubBytes)), nil
 }
 
 // Parameters for Argon2id.
@@ -122,6 +172,8 @@ func generateAccessToken(userID uuid.UUID) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = getKid()
+	privateKey := getPrivateKey()
 	signedToken, err := token.SignedString(privateKey)
 	if err != nil {
 		return "", err
@@ -138,4 +190,25 @@ func generateRefreshToken() string {
 func hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
+}
+
+// encodeBase64URINoPadding encodes bytes to base64url without padding, as required by JWKS
+func encodeBase64URINoPadding(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+// getBigIntBytes returns the base64url encoded string of a big.Int (used for Modulus 'N')
+func getBigIntBytes(b *big.Int) string {
+	return encodeBase64URINoPadding(b.Bytes())
+}
+
+// getIntBytes returns the base64url encoded string of an int (used for Exponent 'E')
+func getIntBytes(i int) string {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, uint64(i))
+	// Trim leading zeros
+	for len(buf) > 1 && buf[0] == 0 {
+		buf = buf[1:]
+	}
+	return encodeBase64URINoPadding(buf)
 }

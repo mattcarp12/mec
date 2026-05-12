@@ -1,29 +1,82 @@
-import React, { createContext, useState, useContext } from 'react';
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+} from 'react';
+
+import { api } from './api';
+
+interface User {
+    sub: string;
+}
 
 interface AuthState {
     isAuthenticated: boolean;
-    login: () => void;
-    logout: () => void;
+    user: User | null;
+    loading: boolean;
+
+    refreshSession: () => Promise<void>;
+    logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState>({
     isAuthenticated: false,
-    login: () => { },
-    logout: () => { },
+    user: null,
+    loading: true,
+
+    refreshSession: async () => { },
+    logout: async () => { },
 });
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+export function AuthProvider({
+    children,
+}: {
+    children: React.ReactNode;
+}) {
 
-    // TODO: Use /api/v1/auth/me endpoint here
-    const login = () => setIsAuthenticated(true);
-    const logout = () => setIsAuthenticated(false);
+    const [loading, setLoading] = useState(true);
+
+    const [user, setUser] = useState<User | null>(null);
+
+    async function refreshSession() {
+        try {
+            const res = await api.get('/api/v1/users/me');
+
+            setUser(res.data);
+        } catch {
+            setUser(null);
+        }
+    }
+
+    async function logout() {
+        try {
+            await api.post('/api/v1/auth/logout');
+        } finally {
+            setUser(null);
+        }
+    }
+
+    useEffect(() => {
+        refreshSession()
+            .finally(() => setLoading(false));
+    }, []);
 
     return (
-        <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+        <AuthContext.Provider
+            value={{
+                isAuthenticated: !!user,
+                user,
+                loading,
+                refreshSession,
+                logout,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );
-};
+}
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+    return useContext(AuthContext);
+}

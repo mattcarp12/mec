@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/mattcarp12/mec/internal/models"
 )
 
 // writeJSON is a helper to centralize JSON responses.
@@ -26,12 +29,35 @@ func Register_Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := RegisterNewUser(r.Context(), payload.Email, payload.Password)
+	// Check if user already exists (optional, DB constraint will also catch this,
+	// but doing it here allows for a cleaner error message).
+	existingUser, err := GetUserByEmail(r.Context(), payload.Email)
 	if err != nil {
-		if err == ErrUserExists {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
-		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	if existingUser != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user already exists"})
+		return
+	}
+
+	// 2. Hash the password
+	hash, err := hashPassword(payload.Password)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	// 3. Create the user model
+	user := &models.User{
+		Email:        payload.Email,
+		PasswordHash: hash,
+		Role:         "customer", // Default role
+	}
+
+	// 4. Persist to database
+	err = CreateUser(r.Context(), user)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
@@ -51,8 +77,15 @@ func Login_Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := Login(r.Context(), payload.Email, payload.Password)
+	user, err := GetUserByEmail(r.Context(), payload.Email)
 	if err != nil {
+		// We don't expose if the user exists or not to prevent enumeration attacks
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		return
+	}
+
+	match, err := verifyPassword(payload.Password, user.PasswordHash)
+	if err != nil || !match {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -162,12 +195,68 @@ func Logout_Handler(w http.ResponseWriter, r *http.Request) {
 		Name:     "refresh_token",
 		Value:    "",
 		Path:     "/",
-		Expires:  time.Unix(0, 0), // Set expiration to the past
-		MaxAge:   -1,              // Tell the browser to delete it immediately
-		HttpOnly: true,            // Maintain the same security flags [cite: 21]
-		Secure:   false,           // Set to true in prod (requires HTTPS) [cite: 21]
+		Expires:  time.Unix(0, 0),      // Set expiration to the past
+		MaxAge:   -1,                   // Tell the browser to delete it immediately
+		HttpOnly: true,                 // Maintain the same security flags [cite: 21]
+		Secure:   false,                // Set to true in prod (requires HTTPS) [cite: 21]
 		SameSite: http.SameSiteLaxMode, // Protects against CSRF [cite: 21]
 	})
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "successfully logged out"})
+}
+
+// JWKS_Handler serves the public keys so other microservices can verify JWT signatures.
+// JWKS_Hander handles GET /jwks.json
+func JWKS_Handler(w http.ResponseWriter, r *http.Request) {
+	var jwks models.JWKS
+
+	// Initialize as an empty slice so it marshals to `[]` instead of `null` if empty
+	jwks.Keys = make([]models.JWK, 0)
+
+	// Iterate over the sync.Map safely
+	keystore.Range(func(key, value any) bool {
+		kid, ok := key.(string)
+
+		// Skip the pointer to the current active key
+		if !ok || kid == "current-kid" {
+			return true // Returning true continues the iteration
+		}
+
+		privKey, ok := value.(*rsa.PrivateKey)
+		if !ok {
+			return true
+		}
+
+		pubKey := &privKey.PublicKey
+
+		// Construct the JSON Web Key
+		jwk := models.JWK{
+			Kty: "RSA",
+			Alg: "RS256",
+			Use: "sig",
+			Kid: kid,
+			N:   getBigIntBytes(pubKey.N),
+			E:   getIntBytes(pubKey.E), // Uses the helper you added to crypto.go
+		}
+
+		jwks.Keys = append(jwks.Keys, jwk)
+		return true // continue iteration
+	})
+
+	writeJSON(w, http.StatusOK, jwks)
+}
+
+// Me_Handler handles GET /api/v1/auth/me and returns the authenticated user's info.
+func Me_Handler(w http.ResponseWriter, r *http.Request) {
+	user, ok := GetAuthenticatedUser(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "unauthorized",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sub": user.Subject,
+	})
 }

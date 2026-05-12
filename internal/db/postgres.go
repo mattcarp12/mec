@@ -13,7 +13,7 @@ import (
 var dsn = os.Getenv("DATABASE_URL")
 var DB *sqlx.DB
 
-func Init() {
+func InitDB() {
 	db, err := newPostgresDB()
 	if err != nil {
 		log.Fatalf("Fatal: Could not connect to database: %v", err)

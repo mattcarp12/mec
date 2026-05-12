@@ -10,15 +10,18 @@ import (
 
 func main() {
 	log.Println("Starting Auth Service...")
-	db.Init()
+	db.InitDB()
 
 	mux := http.NewServeMux()
 
-	// Notice the HTTP methods included directly in the path string!
+	// Unprotected routes
 	mux.HandleFunc("POST /api/v1/auth/register", Register_Handler)
 	mux.HandleFunc("POST /api/v1/auth/login", Login_Handler)
+	
+	// Protected routes (require valid JWT)
 	mux.HandleFunc("POST /api/v1/auth/refresh", Refresh_Handler)
 	mux.HandleFunc("POST /api/v1/auth/logout", Logout_Handler)
+	mux.HandleFunc("GET /jwks.json", JWKS_Handler)
 
 	// 3. Server Configuration
 	// Never use the default http.ListenAndServe() as it lacks timeouts and can easily

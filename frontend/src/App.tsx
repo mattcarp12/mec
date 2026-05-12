@@ -27,7 +27,7 @@ function Home() {
 // --- LOGIN COMPONENT ---
 function Login() {
   const { register, handleSubmit, formState: { errors } } = useForm();
-  const { login } = useAuth();
+  const { refreshSession } = useAuth();
   const navigate = useNavigate();
 
   // This function runs when the form is submitted
@@ -37,7 +37,7 @@ function Login() {
       await api.post('/api/v1/auth/login', data);
 
       // 2. If successful, update our global React state
-      login();
+      await refreshSession();
 
       // 3. Redirect the user back to the catalog
       navigate('/');

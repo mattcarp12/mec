@@ -1,7 +1,0 @@
-CREATE TABLE refresh_tokens (
-    token_hash VARCHAR(255) PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    revoked BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);

@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpassword
+      # ecommercedb is the default, devuser has superuser rights to create the 'zitadel' db
+      POSTGRES_DB: ecommercedb 
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d ecommercedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  pocketbase:
+    build:
+      context: ./backend/deploy/pocketbase
+    ports:
+      - "8090:8090"
+    volumes:
+      - pb_data:/pb_data
+
+volumes:
+  postgres_data:
+  redis_data:
+  pb_data:

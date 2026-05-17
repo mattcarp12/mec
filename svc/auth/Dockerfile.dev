@@ -1,9 +1,0 @@
-FROM golang:1.26-alpine
-
-WORKDIR /workspace/backend
-
-# Install the hot-reload daemon
-RUN go install github.com/githubnemo/CompileDaemon@latest
-
-# The daemon watches for file changes, rebuilds, and runs the executable
-ENTRYPOINT CompileDaemon --build="go build -o /build/identity ./cmd/identity" --command="/build/identity"

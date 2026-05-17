@@ -1,39 +1,53 @@
-# Generate RSA keys for JWT signing
-gen-keys:
-	@echo "Generating RSA private and public keys..."
-	openssl genrsa -out svc/auth/private.pem 2048
-	openssl rsa -in svc/auth/private.pem -pubout -out svc/auth/public.pem
+.PHONY: devup devdown devlogs api web setup
 
-# Clean up keys
-clean-keys:
-	rm -f svc/auth/private.pem svc/auth/public.pem
+# ==============================================================================
+# Dev Infra (Docker)
+# ==============================================================================
 
-run-auth:
-	go run ./svc/auth
+devup:
+	@echo "Starting infrastructure..."
+	docker compose up -d
 
-run-product:
-	go run ./svc/product
-
-run-frontend:
-	cd frontend && npm run dev
-
-migrate-identity:
-	go run ./cmd/migrate identity
-
-docker-up:
-	docker compose up --build
-
-docker-down:
+devdown:
+	@echo "Stopping infrastructure..."
 	docker compose down
 
-test-auth:
-	go test ./svc/auth/...
+devlogs:
+	docker compose logs -f
 
-fmt:
-	go fmt ./...
+# ==============================================================================
+# Application Execution
+# ==============================================================================
 
-lint:
-	golangci-lint run
+# Runs the Go backend API
+api:
+	@echo "Starting Go API..."
+	cd backend && go run cmd/api/main.go
 
-dev:
-	make -j3 run-auth run-product run-frontend
+# Runs the Next.js frontend dev server
+web:
+	@echo "Starting Next.js frontend..."
+	cd frontend && npm run dev
+
+# Add to your existing Makefile variables at the top
+DB_URL="postgres://devuser:devpassword@localhost:5432/ecommercedb?sslmode=disable"
+
+# ==============================================================================
+# Database & Migrations
+# ==============================================================================
+
+migrate-up:
+	@echo "Running migrations up..."
+	migrate -path backend/db/migrations -database $(DB_URL) up
+
+migrate-down:
+	@echo "Running migrations down..."
+	migrate -path backend/db/migrations -database $(DB_URL) down 1
+
+sqlc:
+	@echo "Generating Go code with sqlc..."
+	cd backend && sqlc generate
+
+seed:
+	@echo "Seeding database..."
+	cd backend && go run cmd/seed/main.go

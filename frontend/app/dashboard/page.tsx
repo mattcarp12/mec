@@ -20,7 +20,9 @@ export default function DashboardPage() {
     // 2. Fetch data from your Go backend
     const fetchGoData = async () => {
       try {
-        const goRes = await fetch("/api/v1/me", {
+        const apiBase =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+        const goRes = await fetch(`${apiBase}/api/v1/me`, {
           headers: {
             // Attach the JWT directly from the PocketBase store
             Authorization: `Bearer ${pb.authStore.token}`,

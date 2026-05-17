@@ -12,6 +12,7 @@ import (
 
 	chimiddleware "github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/mattcarp12/mec/internal/platform/config"
 	"github.com/mattcarp12/mec/internal/platform/db"
@@ -52,6 +53,15 @@ func main() {
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger) // In Prod, swap this for a custom zerolog middleware
 	r.Use(chimiddleware.Recoverer)
+	// Basic CORS configuration for development and staging
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:3000", "https://*.vercel.app"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300, // Preflight request cache
+	}))
 	r.Use(chimiddleware.Timeout(60 * time.Second))
 
 	// Health Check Route

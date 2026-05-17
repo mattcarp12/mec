@@ -9,10 +9,10 @@ import (
 )
 
 type AppConfig struct {
-	Environment string `env:"APP_ENV" envDefault:"development"`
-	Port        int    `env:"PORT" envDefault:"8080"`
-	DatabaseURL string `env:"DATABASE_URL,required"`
-	// We will add Zitadel / Stripe keys here later
+	Environment   string `env:"APP_ENV" envDefault:"development"`
+	Port          int    `env:"PORT" envDefault:"8080"`
+	DatabaseURL   string `env:"DATABASE_URL,required"`
+	PocketbaseURL string `env:"POCKETBASE_URL" envDefault:"http://localhost:8090"`
 }
 
 // Load reads the .env file and parses it into AppConfig

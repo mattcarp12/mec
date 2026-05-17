@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -63,7 +64,7 @@ func main() {
 	r.Route("/api/v1", func(r chi.Router) {
 		// Mount the PocketBase token introspection middleware
 		// Note: In production, "http://localhost:8090" should come from your config struct!
-		r.Use(middleware.PocketBaseAuth("http://localhost:8090"))
+		r.Use(middleware.PocketBaseAuth(cfg.PocketbaseURL))
 
 		// A test endpoint to verify the context injection
 		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +83,7 @@ func main() {
 	// Server Start & Graceful Shutdown
 	// =========================================================================
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      r,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
